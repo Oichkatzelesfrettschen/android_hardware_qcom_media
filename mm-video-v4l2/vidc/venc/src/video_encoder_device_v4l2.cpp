@@ -2366,6 +2366,26 @@ bool venc_dev::venc_color_align(OMX_BUFFERHEADERTYPE *buffer,
         return true;
     }
 
+    // This routine converts a tightly packed YUV420SP buffer (an app source via
+    // MediaCodec, chroma at width*height) into the Venus-aligned layout. A source
+    // that already delivers a Venus-aligned buffer -- a camera frame forced to
+    // DATA_CALLBACK_YUV arrives at VENUS_BUFFER_SIZE -- must not be realigned:
+    // src_chroma_offset would read the luma padding as the first chroma rows and
+    // corrupt the frame. Only a source of exactly the unpadded size needs it.
+    OMX_U32 unpadded_size = (width * height * 3) / 2;
+    OMX_U32 venus_size = VENUS_BUFFER_SIZE(COLOR_FMT_NV12, width, height);
+    if (buffer->nFilledLen != unpadded_size) {
+        DEBUG_PRINT_HIGH("venc_color_align: skip, source already aligned "
+                "(nFilledLen=%u unpadded=%u venus=%u)",
+                (unsigned int)buffer->nFilledLen, (unsigned int)unpadded_size,
+                (unsigned int)venus_size);
+        return true;
+    }
+    DEBUG_PRINT_HIGH("venc_color_align: realign tightly packed source "
+            "(nFilledLen=%u unpadded=%u venus=%u)",
+            (unsigned int)buffer->nFilledLen, (unsigned int)unpadded_size,
+            (unsigned int)venus_size);
+
     if (buffer->nAllocLen >= VENUS_BUFFER_SIZE(COLOR_FMT_NV12, width, height)) {
         OMX_U8* src_buf = buffer->pBuffer, *dst_buf = buffer->pBuffer;
         //Do chroma first, so that we can convert it in-place
