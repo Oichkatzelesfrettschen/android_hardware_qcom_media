@@ -2368,22 +2368,25 @@ bool venc_dev::venc_color_align(OMX_BUFFERHEADERTYPE *buffer,
 
     // This routine converts a tightly packed YUV420SP buffer (an app source via
     // MediaCodec, chroma at width*height) into the Venus-aligned layout. A source
-    // that already delivers a Venus-aligned buffer -- a camera frame forced to
-    // DATA_CALLBACK_YUV arrives at VENUS_BUFFER_SIZE -- must not be realigned:
-    // src_chroma_offset would read the luma padding as the first chroma rows and
-    // corrupt the frame. Only a source of exactly the unpadded size needs it.
-    OMX_U32 unpadded_size = (width * height * 3) / 2;
+    // whose filled length covers the whole Venus plane layout is already aligned
+    // -- a camera frame forced to DATA_CALLBACK_YUV arrives at VENUS_BUFFER_SIZE --
+    // and must not be realigned: src_chroma_offset would read the luma padding as
+    // the first chroma rows and corrupt the frame. A tightly packed frame is
+    // shorter than the plane layout at every size where the two layouts differ,
+    // including a filled length rounded up to a page, so any shorter source is
+    // realigned. Where they coincide (640x480) skipping is the identity.
+    OMX_U32 venus_planes = y_stride * y_scanlines + uv_stride * uv_scanlines;
     OMX_U32 venus_size = VENUS_BUFFER_SIZE(COLOR_FMT_NV12, width, height);
-    if (buffer->nFilledLen != unpadded_size) {
-        DEBUG_PRINT_HIGH("venc_color_align: skip, source already aligned "
-                "(nFilledLen=%u unpadded=%u venus=%u)",
-                (unsigned int)buffer->nFilledLen, (unsigned int)unpadded_size,
+    if (buffer->nFilledLen >= venus_planes) {
+        DEBUG_PRINT_LOW("venc_color_align: skip, source already aligned "
+                "(nFilledLen=%u planes=%u venus=%u)",
+                (unsigned int)buffer->nFilledLen, (unsigned int)venus_planes,
                 (unsigned int)venus_size);
         return true;
     }
-    DEBUG_PRINT_HIGH("venc_color_align: realign tightly packed source "
-            "(nFilledLen=%u unpadded=%u venus=%u)",
-            (unsigned int)buffer->nFilledLen, (unsigned int)unpadded_size,
+    DEBUG_PRINT_LOW("venc_color_align: realign tightly packed source "
+            "(nFilledLen=%u planes=%u venus=%u)",
+            (unsigned int)buffer->nFilledLen, (unsigned int)venus_planes,
             (unsigned int)venus_size);
 
     if (buffer->nAllocLen >= VENUS_BUFFER_SIZE(COLOR_FMT_NV12, width, height)) {
