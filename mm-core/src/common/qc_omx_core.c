@@ -287,43 +287,6 @@ static int check_lib_unload(int index)
 }
 /* ======================================================================
 FUNCTION
-  is_cmp_already_exists
-
-DESCRIPTION
-  Check if the component already exists or not. Used in the
-  management of component handles.
-
-PARAMETERS
-  None
-
-RETURN VALUE
-  Error None.
-========================================================================== */
-static int is_cmp_already_exists(char *cmp_name)
-{
-  unsigned i    =0,j=0;
-  int rc = -1;
-  for(i=0; i< SIZE_OF_CORE; i++)
-  {
-    if(!strcmp(cmp_name, core[i].name))
-    {
-      for(j=0; j< OMX_COMP_MAX_INST; j++)
-      {
-        if(core[i].inst[j])
-        {
-          rc = i;
-          DEBUG_PRINT("Component exists %d\n", rc);
-          return rc;
-        }
-      }
-      break;
-    }
-  }
-  return rc;
-}
-
-/* ======================================================================
-FUNCTION
   get_cmp_handle
 
 DESCRIPTION
