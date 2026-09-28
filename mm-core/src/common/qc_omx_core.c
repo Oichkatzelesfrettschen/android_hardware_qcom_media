@@ -407,8 +407,6 @@ OMX_GetHandle(OMX_OUT OMX_HANDLETYPE*     handle,
   pthread_mutex_lock(&lock_core);
   if(handle)
   {
-    struct stat sd;
-
     *handle = NULL;
 
     cmp_index = get_cmp_index(componentName);
