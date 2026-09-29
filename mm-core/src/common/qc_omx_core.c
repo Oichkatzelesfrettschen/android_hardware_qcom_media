@@ -287,43 +287,6 @@ static int check_lib_unload(int index)
 }
 /* ======================================================================
 FUNCTION
-  is_cmp_already_exists
-
-DESCRIPTION
-  Check if the component already exists or not. Used in the
-  management of component handles.
-
-PARAMETERS
-  None
-
-RETURN VALUE
-  Error None.
-========================================================================== */
-static int is_cmp_already_exists(char *cmp_name)
-{
-  unsigned i    =0,j=0;
-  int rc = -1;
-  for(i=0; i< SIZE_OF_CORE; i++)
-  {
-    if(!strcmp(cmp_name, core[i].name))
-    {
-      for(j=0; j< OMX_COMP_MAX_INST; j++)
-      {
-        if(core[i].inst[j])
-        {
-          rc = i;
-          DEBUG_PRINT("Component exists %d\n", rc);
-          return rc;
-        }
-      }
-      break;
-    }
-  }
-  return rc;
-}
-
-/* ======================================================================
-FUNCTION
   get_cmp_handle
 
 DESCRIPTION
@@ -407,8 +370,6 @@ OMX_GetHandle(OMX_OUT OMX_HANDLETYPE*     handle,
   pthread_mutex_lock(&lock_core);
   if(handle)
   {
-    struct stat sd;
-
     *handle = NULL;
 
     cmp_index = get_cmp_index(componentName);
@@ -558,6 +519,10 @@ OMX_SetupTunnel(OMX_IN OMX_HANDLETYPE outputComponent,
                 OMX_IN OMX_U32              inputPort)
 {
   /* Not supported right now */
+  (void)outputComponent;
+  (void)outputPort;
+  (void)inputComponent;
+  (void)inputPort;
   DEBUG_PRINT("OMXCORE API: OMX_SetupTunnel Not implemented \n");
   return OMX_ErrorNotImplemented;
 }
@@ -579,6 +544,8 @@ OMX_GetContentPipe(OMX_OUT OMX_HANDLETYPE* pipe,
                    OMX_IN OMX_STRING        uri)
 {
   /* Not supported right now */
+  (void)pipe;
+  (void)uri;
   DEBUG_PRINT("OMXCORE API: OMX_GetContentPipe Not implemented \n");
   return OMX_ErrorNotImplemented;
 }

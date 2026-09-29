@@ -78,9 +78,9 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
         #define DEBUG_DETAIL      printf
     #endif // _ANDROID_
 #else
-    #define DEBUG_PRINT_ERROR
-    #define DEBUG_PRINT
-    #define DEBUG_DETAIL
+    #define DEBUG_PRINT_ERROR(...) do { } while (0)
+    #define DEBUG_PRINT(...) do { } while (0)
+    #define DEBUG_DETAIL(...) do { } while (0)
 #endif // _ENABLE_QC_MSG_LOG_
 
 #endif // _QC_OMX_MSG_H_
