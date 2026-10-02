@@ -652,7 +652,7 @@ int venc_dev::venc_output_log_buffers(const char *buffer_addr, int buffer_len)
                            m_debug.log_loc, m_sVenc_cfg.input_width, m_sVenc_cfg.input_height, this);
         }
         if ((size > PROPERTY_VALUE_MAX) && (size < 0)) {
-             DEBUG_PRINT_ERROR("Failed to open output file: %s for logging size:%s",
+             DEBUG_PRINT_ERROR("Failed to open output file: %s for logging size:%d",
                                 m_debug.outfile_name, size);
         }
         m_debug.outfile = fopen(m_debug.outfile_name, "ab");
@@ -688,7 +688,7 @@ int venc_dev::venc_extradata_log_buffers(char *buffer_addr)
                            m_debug.log_loc, m_sVenc_cfg.input_width, m_sVenc_cfg.input_height, this);
         }
         if ((size > PROPERTY_VALUE_MAX) && (size < 0)) {
-             DEBUG_PRINT_ERROR("Failed to open extradata file: %s for logging size:%s",
+             DEBUG_PRINT_ERROR("Failed to open extradata file: %s for logging size:%d",
                                 m_debug.extradatafile_name, size);
         }
 
@@ -722,12 +722,12 @@ int venc_dev::venc_input_log_buffers(OMX_BUFFERHEADERTYPE *pbuffer, int fd, int 
         int size = snprintf(m_debug.infile_name, PROPERTY_VALUE_MAX, "%s/input_enc_%lu_%lu_%p.yuv",
                             m_debug.log_loc, m_sVenc_cfg.input_width, m_sVenc_cfg.input_height, this);
         if ((size > PROPERTY_VALUE_MAX) && (size < 0)) {
-             DEBUG_PRINT_ERROR("Failed to open output file: %s for logging size:%s",
+             DEBUG_PRINT_ERROR("Failed to open output file: %s for logging size:%d",
                                 m_debug.infile_name, size);
         }
         m_debug.infile = fopen (m_debug.infile_name, "ab");
         if (!m_debug.infile) {
-            DEBUG_PRINT_HIGH("Failed to open input file: %s for logging", m_debug.infile);
+            DEBUG_PRINT_HIGH("Failed to open input file: %s for logging", m_debug.infile_name);
             m_debug.infile_name[0] = '\0';
             return -1;
         }

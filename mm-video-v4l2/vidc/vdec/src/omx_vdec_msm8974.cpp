@@ -9013,7 +9013,6 @@ void omx_vdec::print_debug_extradata(OMX_OTHER_EXTRADATATYPE *extra)
                 "                         type: %lu \n"
                 " quincunx_sampling_flagFormat: %lu \n"
                 "  content_interpretation_type: %lu \n"
-                "  content_interpretation_type: %lu \n"
                 "        spatial_flipping_flag: %lu \n"
                 "          frame0_flipped_flag: %lu \n"
                 "             field_views_flag: %lu \n"
