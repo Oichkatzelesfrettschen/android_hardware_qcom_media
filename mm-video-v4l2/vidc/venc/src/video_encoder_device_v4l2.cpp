@@ -651,7 +651,7 @@ int venc_dev::venc_output_log_buffers(const char *buffer_addr, int buffer_len)
            size = snprintf(m_debug.outfile_name, PROPERTY_VALUE_MAX, "%s/output_enc_%lu_%lu_%p.ivf",
                            m_debug.log_loc, m_sVenc_cfg.input_width, m_sVenc_cfg.input_height, this);
         }
-        if ((size > PROPERTY_VALUE_MAX) && (size < 0)) {
+        if (size < 0 || size >= PROPERTY_VALUE_MAX) {
              DEBUG_PRINT_ERROR("Failed to open output file: %s for logging size:%d",
                                 m_debug.outfile_name, size);
         }
@@ -687,7 +687,7 @@ int venc_dev::venc_extradata_log_buffers(char *buffer_addr)
            size = snprintf(m_debug.extradatafile_name, PROPERTY_VALUE_MAX, "%s/extradata_enc_%lu_%lu_%p.ivf",
                            m_debug.log_loc, m_sVenc_cfg.input_width, m_sVenc_cfg.input_height, this);
         }
-        if ((size > PROPERTY_VALUE_MAX) && (size < 0)) {
+        if (size < 0 || size >= PROPERTY_VALUE_MAX) {
              DEBUG_PRINT_ERROR("Failed to open extradata file: %s for logging size:%d",
                                 m_debug.extradatafile_name, size);
         }
@@ -721,7 +721,7 @@ int venc_dev::venc_input_log_buffers(OMX_BUFFERHEADERTYPE *pbuffer, int fd, int 
     if (!m_debug.infile) {
         int size = snprintf(m_debug.infile_name, PROPERTY_VALUE_MAX, "%s/input_enc_%lu_%lu_%p.yuv",
                             m_debug.log_loc, m_sVenc_cfg.input_width, m_sVenc_cfg.input_height, this);
-        if ((size > PROPERTY_VALUE_MAX) && (size < 0)) {
+        if (size < 0 || size >= PROPERTY_VALUE_MAX) {
              DEBUG_PRINT_ERROR("Failed to open output file: %s for logging size:%d",
                                 m_debug.infile_name, size);
         }
