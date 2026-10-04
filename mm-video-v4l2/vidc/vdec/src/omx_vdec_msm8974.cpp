@@ -1565,6 +1565,20 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         maxSmoothStreamingWidth = 1280;
         maxSmoothStreamingHeight = 720;
     }
+
+    /*
+     * Android clients queue one complete access unit per input buffer and
+     * never select a packing format, so the input port starts in
+     * frame-by-frame mode and each buffer reaches the driver as queued.
+     * OMX_QCOM_FramePacking_Arbitrary on OMX_QcomIndexPortDefn, or
+     * vidc.dec.debug.arbitrarybytes.mode=1, selects frame parsing.
+     */
+    arbitrary_bytes = false;
+    property_get("vidc.dec.debug.arbitrarybytes.mode", property_value, "0");
+    if (atoi(property_value)) {
+        DEBUG_PRINT_HIGH("arbitrary_bytes mode enabled via property command");
+        arbitrary_bytes = true;
+    }
 #endif
 
     if (!strncmp(role, "OMX.qcom.video.decoder.avc.secure",OMX_MAX_STRINGNAME_SIZE)) {
@@ -1714,6 +1728,8 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         DEBUG_PRINT_ERROR("ERROR:Unknown Component");
         eRet = OMX_ErrorInvalidComponentName;
     }
+    DEBUG_PRINT_HIGH("component_init: %s input framing %s", drv_ctx.kind,
+            arbitrary_bytes ? "arbitrary-bytes" : "frame-by-frame");
     if (eRet == OMX_ErrorNone) {
 
         drv_ctx.output_format = VDEC_YUV_FORMAT_NV12;
