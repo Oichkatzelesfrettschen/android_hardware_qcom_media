@@ -64,6 +64,9 @@ libOmxVdec-def += -D_HEVC_USE_ADSP_HEAP_
 # The aDSP-hosted q6 HFI core decodes HEVC; omx_vdec serves the
 # OMX.qcom.video.decoder.hevc kind on it.
 libOmxVdec-def += -DOMX_VDEC_HEVC_Q6
+# The legacy ASF extractor delivers whole VC-1 frames; AOSP ACodec never sets
+# OMX_QcomIndexPortDefn, so the vc1 and wmv kinds default to frame mode.
+libOmxVdec-def += -DOMX_VDEC_VC1_FRAME_MODE
 endif
 ifeq ($(TARGET_BOARD_PLATFORM),apq8084)
 libOmxVdec-def += -DMAX_RES_1080P

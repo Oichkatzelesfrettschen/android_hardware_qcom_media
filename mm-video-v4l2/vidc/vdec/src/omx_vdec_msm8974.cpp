@@ -1721,6 +1721,12 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         codec_type_parse = CODEC_TYPE_VC1;
         output_capability = V4L2_PIX_FMT_VC1_ANNEX_G;
         m_frame_parser.init_start_codes (codec_type_parse);
+#ifdef OMX_VDEC_VC1_FRAME_MODE
+        /* Frame mode: push_input_vc1 rejects STRUCT_C (simple and main
+         * profile) streams and only coalesces advanced-profile start codes,
+         * while the client delivers one VC-1 frame per buffer. */
+        arbitrary_bytes = false;
+#endif
     } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.wmv",\
                 OMX_MAX_STRINGNAME_SIZE)) {
         strlcpy((char *)m_cRole, "video_decoder.vc1",OMX_MAX_STRINGNAME_SIZE);
@@ -1729,6 +1735,9 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         codec_type_parse = CODEC_TYPE_VC1;
         output_capability = V4L2_PIX_FMT_VC1_ANNEX_L;
         m_frame_parser.init_start_codes (codec_type_parse);
+#ifdef OMX_VDEC_VC1_FRAME_MODE
+        arbitrary_bytes = false;
+#endif
     } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.vp8",    \
                 OMX_MAX_STRINGNAME_SIZE)) {
         strlcpy((char *)m_cRole, "video_decoder.vp8",OMX_MAX_STRINGNAME_SIZE);
