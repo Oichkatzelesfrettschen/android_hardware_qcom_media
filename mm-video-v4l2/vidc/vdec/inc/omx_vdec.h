@@ -99,13 +99,24 @@ extern "C" {
 #ifdef MAX_RES_1080P
 #include "mp4_utils.h"
 #endif
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
 #include "hevc_utils.h"
-/* OMX_VIDEO_HEVCProfileMain and OMX_VIDEO_HEVCMainTierLevel31 of the
+/* OMX_VIDEO_HEVCProfileMain and OMX_VIDEO_HEVCMainTierLevel31/4 of the
  * framework's OMX_VideoExt.h, which mm-core/inc/OMX_VideoExt.h lacks. */
 #define VDEC_HEVC_PROFILE_MAIN          0x1
 #define VDEC_HEVC_LEVEL_MAIN_TIER_31    0x100
+#define VDEC_HEVC_LEVEL_MAIN_TIER_4     0x400
+/* Component name of the HEVC kind served by the q6 HFI core. */
+#define OMX_VDEC_HEVC_Q6_NAME           "OMX.qcom.video.decoder.hevc.q6"
 #endif
+/* Sorenson Spark (FLV1) session on the Venus core (HFI_VIDEO_CODEC_SPARK,
+ * 0x200). V4L2_PIX_FMT_SPK is the mainline identifier ('SPK0'); the kernel's
+ * legacy vdec_codec enum has no Spark value, so drv_ctx.decoder_format holds
+ * this local one. */
+#ifndef V4L2_PIX_FMT_SPK
+#define V4L2_PIX_FMT_SPK v4l2_fourcc('S', 'P', 'K', '0')
+#endif
+#define OMX_VDEC_CODECTYPE_SPARK 0xe
 #include <linux/android_pmem.h>
 #include "extra_data_handler.h"
 #include "ts_parser.h"
@@ -621,7 +632,7 @@ class omx_vdec: public qc_omx_component
         OMX_ERRORTYPE push_input_sc_codec (OMX_HANDLETYPE hComp);
         OMX_ERRORTYPE push_input_h264 (OMX_HANDLETYPE hComp);
         OMX_ERRORTYPE push_input_vc1 (OMX_HANDLETYPE hComp);
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
         OMX_ERRORTYPE push_input_hevc (OMX_HANDLETYPE hComp);
 #endif
 
@@ -938,8 +949,9 @@ class omx_vdec: public qc_omx_component
         } m_custom_buffersize;
         bool m_power_hinted;
         bool is_q6_platform;
-#ifdef OMX_VDEC_HEVC_Q6
-        /* The session runs on the aDSP-hosted q6 HFI core (HEVC decode). */
+#ifdef OMX_VDEC_HEVC
+        /* True when the session runs on the aDSP-hosted q6 HFI core; the
+         * Venus HFI core serves it otherwise. */
         bool m_hevc_q6;
         HEVC_Utils m_hevc_utils;
 #endif
