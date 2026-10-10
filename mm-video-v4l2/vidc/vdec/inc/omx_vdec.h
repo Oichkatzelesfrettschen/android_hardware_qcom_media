@@ -109,11 +109,12 @@ extern "C" {
 /* Component name of the HEVC kind served by the q6 HFI core. */
 #define OMX_VDEC_HEVC_Q6_NAME           "OMX.qcom.video.decoder.hevc.q6"
 #endif
-/* Sorenson Spark (FLV1) session on the Venus core: the V4L2 fourcc and the
- * vdec_codec value follow the msm_vidc decoder format table
- * (HFI_VIDEO_CODEC_SPARK, 0x200). */
-#ifndef V4L2_PIX_FMT_SPARK
-#define V4L2_PIX_FMT_SPARK v4l2_fourcc('S', 'P', 'R', 'K')
+/* Sorenson Spark (FLV1) session on the Venus core (HFI_VIDEO_CODEC_SPARK,
+ * 0x200). V4L2_PIX_FMT_SPK is the mainline identifier ('SPK0'); the kernel's
+ * legacy vdec_codec enum has no Spark value, so drv_ctx.decoder_format holds
+ * this local one. */
+#ifndef V4L2_PIX_FMT_SPK
+#define V4L2_PIX_FMT_SPK v4l2_fourcc('S', 'P', 'K', '0')
 #endif
 #define OMX_VDEC_CODECTYPE_SPARK 0xe
 #include <linux/android_pmem.h>

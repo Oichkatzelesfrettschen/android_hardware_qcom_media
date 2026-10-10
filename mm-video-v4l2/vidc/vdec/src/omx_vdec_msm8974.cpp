@@ -1711,7 +1711,7 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         strlcpy((char *)m_cRole, "video_decoder.spark",OMX_MAX_STRINGNAME_SIZE);
         DEBUG_PRINT_LOW ("Spark Decoder selected");
         drv_ctx.decoder_format = (enum vdec_codec)OMX_VDEC_CODECTYPE_SPARK;
-        output_capability = V4L2_PIX_FMT_SPARK;
+        output_capability = V4L2_PIX_FMT_SPK;
         eCompressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingSpark;
         codec_type_parse = CODEC_TYPE_DIVX;
         arbitrary_bytes = false;
@@ -3743,6 +3743,22 @@ OMX_ERRORTYPE  omx_vdec::set_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                               QOMX_VIDEO_PARAM_DIVXTYPE* divXType = (QOMX_VIDEO_PARAM_DIVXTYPE *) paramData;
                           }
                           break;
+        case OMX_QcomIndexParamVideoSpark: {
+                               VALIDATE_OMX_PARAM_DATA(paramData, QOMX_VIDEO_PARAM_SPARKTYPE);
+                               QOMX_VIDEO_PARAM_SPARKTYPE *sparkType = (QOMX_VIDEO_PARAM_SPARKTYPE *) paramData;
+                               /* The Spark picture header carries the version (0 or 1) the
+                                * firmware decodes, so the declared format needs no driver
+                                * control; only the kind and the value are checked. */
+                               if (strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.spark", OMX_MAX_STRINGNAME_SIZE)
+                                       || sparkType->nPortIndex != OMX_CORE_INPUT_PORT_INDEX) {
+                                   eRet = OMX_ErrorUnsupportedSetting;
+                               } else if (sparkType->eFormat != QOMX_VIDEO_SparkFormatUnused
+                                       && sparkType->eFormat != QOMX_VIDEO_SparkFormat0
+                                       && sparkType->eFormat != QOMX_VIDEO_SparkFormat1) {
+                                   eRet = OMX_ErrorBadParameter;
+                               }
+                           }
+                           break;
         case OMX_QcomIndexPlatformPvt: {
                                VALIDATE_OMX_PARAM_DATA(paramData, OMX_QCOM_PLATFORMPRIVATE_EXTN);
                                DEBUG_PRINT_HIGH("set_parameter: OMX_QcomIndexPlatformPvt OP Port");
@@ -4306,6 +4322,10 @@ OMX_ERRORTYPE  omx_vdec::get_extension_index(OMX_IN OMX_HANDLETYPE      hComp,
         return OMX_ErrorInvalidState;
     } else if (extn_equals(paramName, "OMX.QCOM.index.param.video.SyncFrameDecodingMode")) {
         *indexType = (OMX_INDEXTYPE)OMX_QcomIndexParamVideoSyncFrameDecodingMode;
+    } else if (extn_equals(paramName, "OMX.QCOM.index.param.video.Spark")) {
+        *indexType = (OMX_INDEXTYPE)OMX_QcomIndexParamVideoSpark;
+    } else if (extn_equals(paramName, "OMX.QCOM.index.param.video.DivX")) {
+        *indexType = (OMX_INDEXTYPE)OMX_QcomIndexParamVideoDivx;
     } else if (extn_equals(paramName, "OMX.QCOM.index.param.IndexExtraData")) {
         *indexType = (OMX_INDEXTYPE)OMX_QcomIndexParamIndexExtraDataType;
     } else if (extn_equals(paramName, OMX_QCOM_INDEX_PARAM_VIDEO_FRAMEPACKING_EXTRADATA)) {
