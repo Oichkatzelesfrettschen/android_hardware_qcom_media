@@ -680,7 +680,7 @@ omx_vdec::omx_vdec(): m_error_propogated(false),
     m_smoothstreaming_width = 0;
     m_smoothstreaming_height = 0;
     is_q6_platform = false;
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
     m_hevc_q6 = false;
 #endif
 }
@@ -1570,14 +1570,18 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
     }
 #endif
 
-#ifdef OMX_VDEC_HEVC_Q6
-    /* HEVC decodes on the aDSP-hosted q6 HFI core, which msm_vidc registers
-     * as the decoder node after the venus pair (nr = BASE_DEVICE_NUMBER +
-     * MSM_VIDC_MAX_DEVICES for hfi_type "q6"). */
-    if (!strncmp(role, "OMX.qcom.video.decoder.hevc", OMX_MAX_STRINGNAME_SIZE)) {
+#ifdef OMX_VDEC_HEVC
+    /* The component name selects the HFI core. OMX.qcom.video.decoder.hevc
+     * opens the Venus decoder node (/dev/video32) and its IOMMU ION heap.
+     * OMX.qcom.video.decoder.hevc.q6 opens the decoder node msm_vidc
+     * registers for the aDSP-hosted q6 HFI core (nr = BASE_DEVICE_NUMBER +
+     * MSM_VIDC_MAX_DEVICES for hfi_type "q6") and allocates from the ADSP
+     * ION heap. Both names run the same HEVC kind. */
+    if (!strncmp(role, OMX_VDEC_HEVC_Q6_NAME, OMX_MAX_STRINGNAME_SIZE)) {
         device_name = (OMX_STRING)"/dev/video34";
         is_q6_platform = true;
         m_hevc_q6 = true;
+        role = (OMX_STRING)"OMX.qcom.video.decoder.hevc";
     }
 #endif
 
@@ -1668,6 +1672,9 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         eCompressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingDivx;
         codec_type_parse = CODEC_TYPE_DIVX;
         m_frame_parser.init_start_codes (codec_type_parse);
+#ifdef OMX_VDEC_DIVX_FRAME_MODE
+        arbitrary_bytes = false;
+#endif
 
     } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.divx4",\
                 OMX_MAX_STRINGNAME_SIZE)) {
@@ -1679,6 +1686,9 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         codec_type_parse = CODEC_TYPE_DIVX;
         codec_ambiguous = true;
         m_frame_parser.init_start_codes (codec_type_parse);
+#ifdef OMX_VDEC_DIVX_FRAME_MODE
+        arbitrary_bytes = false;
+#endif
 
     } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.divx",\
                 OMX_MAX_STRINGNAME_SIZE)) {
@@ -1690,6 +1700,21 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         codec_type_parse = CODEC_TYPE_DIVX;
         codec_ambiguous = true;
         m_frame_parser.init_start_codes (codec_type_parse);
+#ifdef OMX_VDEC_DIVX_FRAME_MODE
+        arbitrary_bytes = false;
+#endif
+
+    } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.spark",\
+                OMX_MAX_STRINGNAME_SIZE)) {
+        /* Sorenson Spark (FLV1) frames carry no start codes, so the session
+         * takes one frame per buffer. */
+        strlcpy((char *)m_cRole, "video_decoder.spark",OMX_MAX_STRINGNAME_SIZE);
+        DEBUG_PRINT_LOW ("Spark Decoder selected");
+        drv_ctx.decoder_format = (enum vdec_codec)OMX_VDEC_CODECTYPE_SPARK;
+        output_capability = V4L2_PIX_FMT_SPARK;
+        eCompressionFormat = (OMX_VIDEO_CODINGTYPE)QOMX_VIDEO_CodingSpark;
+        codec_type_parse = CODEC_TYPE_DIVX;
+        arbitrary_bytes = false;
 
     } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.avc",\
                 OMX_MAX_STRINGNAME_SIZE)) {
@@ -1700,7 +1725,7 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         codec_type_parse = CODEC_TYPE_H264;
         m_frame_parser.init_start_codes (codec_type_parse);
         m_frame_parser.init_nal_length(nal_length);
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
     } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.hevc",\
                 OMX_MAX_STRINGNAME_SIZE)) {
         /* ACodec's video coding map keys HEVC to OMX_VIDEO_CodingHEVC, so the
@@ -1934,7 +1959,7 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
                 eRet = OMX_ErrorInsufficientResources;
             }
         }
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
         if (drv_ctx.decoder_format == VDEC_CODECTYPE_HEVC) {
             /* push_input_hevc coalesces NALs into access units through the
              * same scratch buffer the H.264 path uses. */
@@ -2671,8 +2696,8 @@ bool omx_vdec::execute_input_flush()
         if (m_frame_parser.mutils) {
             m_frame_parser.mutils->initialize_frame_checking_environment();
         }
-#ifdef OMX_VDEC_HEVC_Q6
-        if (m_hevc_q6)
+#ifdef OMX_VDEC_HEVC
+        if (drv_ctx.decoder_format == VDEC_CODECTYPE_HEVC)
             m_hevc_utils.initialize_frame_checking_environment();
 #endif
 
@@ -2802,13 +2827,16 @@ OMX_ERRORTYPE omx_vdec::get_supported_profile_level(OMX_VIDEO_PARAM_PROFILELEVEL
             }
         } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.vp8",OMX_MAX_STRINGNAME_SIZE)) {
             eRet = OMX_ErrorNoMore;
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
         } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.hevc",OMX_MAX_STRINGNAME_SIZE)) {
             /* The q6 core decodes at most 1280x720 at 30 fps (qcom,max-hw-load
-             * 108000), the capacity of HEVC Main profile level 3.1. */
+             * 108000), the capacity of HEVC Main profile level 3.1. The Venus
+             * core decodes 1920x1088 at 30 fps (244800 macroblocks/s within
+             * its 352800 qcom,max-hw-load), the capacity of level 4. */
             if (profileLevelType->nProfileIndex == 0) {
                 profileLevelType->eProfile = VDEC_HEVC_PROFILE_MAIN;
-                profileLevelType->eLevel   = VDEC_HEVC_LEVEL_MAIN_TIER_31;
+                profileLevelType->eLevel   = m_hevc_q6 ?
+                    VDEC_HEVC_LEVEL_MAIN_TIER_31 : VDEC_HEVC_LEVEL_MAIN_TIER_4;
             } else {
                 DEBUG_PRINT_LOW("get_parameter: OMX_IndexParamVideoProfileLevelQuerySupported nProfileIndex ret NoMore %lu", profileLevelType->nProfileIndex);
                 eRet = OMX_ErrorNoMore;
@@ -3049,7 +3077,7 @@ OMX_ERRORTYPE  omx_vdec::get_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                                                 nativeBuffersUsage->nUsage = (GRALLOC_USAGE_PRIVATE_MM_HEAP | GRALLOC_USAGE_PROTECTED |
                                                         GRALLOC_USAGE_PRIVATE_UNCACHED);
                                             } else {
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
                                                 /* The q6 core reaches only the ADSP ION heap. */
                                                 if (m_hevc_q6) {
                                                     nativeBuffersUsage->nUsage =
@@ -3519,7 +3547,7 @@ OMX_ERRORTYPE  omx_vdec::set_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                                           DEBUG_PRINT_ERROR("Setparameter: unknown Index %s", comp_role->cRole);
                                           eRet =OMX_ErrorUnsupportedSetting;
                                       }
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
                                   } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.hevc",OMX_MAX_STRINGNAME_SIZE)) {
                                       if (!strncmp((const char*)comp_role->cRole,"video_decoder.hevc",OMX_MAX_STRINGNAME_SIZE)) {
                                           strlcpy((char*)m_cRole,"video_decoder.hevc",OMX_MAX_STRINGNAME_SIZE);
@@ -3555,6 +3583,13 @@ OMX_ERRORTYPE  omx_vdec::set_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                                         ) {
                                       if (!strncmp((const char*)comp_role->cRole,"video_decoder.divx",OMX_MAX_STRINGNAME_SIZE)) {
                                           strlcpy((char*)m_cRole,"video_decoder.divx",OMX_MAX_STRINGNAME_SIZE);
+                                      } else {
+                                          DEBUG_PRINT_ERROR("Setparameter: unknown Index %s", comp_role->cRole);
+                                          eRet =OMX_ErrorUnsupportedSetting;
+                                      }
+                                  } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.spark",OMX_MAX_STRINGNAME_SIZE)) {
+                                      if (!strncmp((const char*)comp_role->cRole,"video_decoder.spark",OMX_MAX_STRINGNAME_SIZE)) {
+                                          strlcpy((char*)m_cRole,"video_decoder.spark",OMX_MAX_STRINGNAME_SIZE);
                                       } else {
                                           DEBUG_PRINT_ERROR("Setparameter: unknown Index %s", comp_role->cRole);
                                           eRet =OMX_ErrorUnsupportedSetting;
@@ -3941,7 +3976,7 @@ OMX_ERRORTYPE  omx_vdec::set_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                              pParams->nMaxFrameWidth,  pParams->nMaxFrameHeight,
                              maxSmoothStreamingWidth, maxSmoothStreamingHeight);
                     eRet = OMX_ErrorBadParameter;
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
                 } else if (m_hevc_q6 && (pParams->nMaxFrameWidth > 1280
                             || pParams->nMaxFrameHeight > 720)) {
                     /* The q6 core decodes at most 1280x720. */
@@ -6055,8 +6090,8 @@ if (buffer->nFlags & QOMX_VIDEO_BUFFERFLAG_EOSEQ) {
         frame_count = 0;
         if (m_frame_parser.mutils)
             m_frame_parser.mutils->initialize_frame_checking_environment();
-#ifdef OMX_VDEC_HEVC_Q6
-        if (m_hevc_q6)
+#ifdef OMX_VDEC_HEVC
+        if (drv_ctx.decoder_format == VDEC_CODECTYPE_HEVC)
             m_hevc_utils.initialize_frame_checking_environment();
 #endif
         m_frame_parser.flush();
@@ -6623,12 +6658,21 @@ OMX_ERRORTYPE  omx_vdec::component_role_enum(OMX_IN OMX_HANDLETYPE hComp,
     }
 
     else if ((!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.divx",OMX_MAX_STRINGNAME_SIZE)) ||
-            (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.divx311",OMX_MAX_STRINGNAME_SIZE))
+            (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.divx311",OMX_MAX_STRINGNAME_SIZE)) ||
+            (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.divx4",OMX_MAX_STRINGNAME_SIZE))
         )
 
     {
         if ((0 == index) && role) {
             strlcpy((char *)role, "video_decoder.divx",OMX_MAX_STRINGNAME_SIZE);
+            DEBUG_PRINT_LOW("component_role_enum: role %s",role);
+        } else {
+            DEBUG_PRINT_LOW("No more roles");
+            eRet = OMX_ErrorNoMore;
+        }
+    } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.spark",OMX_MAX_STRINGNAME_SIZE)) {
+        if ((0 == index) && role) {
+            strlcpy((char *)role, "video_decoder.spark",OMX_MAX_STRINGNAME_SIZE);
             DEBUG_PRINT_LOW("component_role_enum: role %s",role);
         } else {
             DEBUG_PRINT_LOW("No more roles");
@@ -6642,7 +6686,7 @@ OMX_ERRORTYPE  omx_vdec::component_role_enum(OMX_IN OMX_HANDLETYPE hComp,
             DEBUG_PRINT_LOW("No more roles");
             eRet = OMX_ErrorNoMore;
         }
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
     } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.hevc",OMX_MAX_STRINGNAME_SIZE)) {
         if ((0 == index) && role) {
             strlcpy((char *)role, "video_decoder.hevc",OMX_MAX_STRINGNAME_SIZE);
@@ -7531,7 +7575,7 @@ OMX_ERRORTYPE omx_vdec::push_input_buffer (OMX_HANDLETYPE hComp)
             case CODEC_TYPE_H264:
                 ret = push_input_h264(hComp);
                 break;
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
             case CODEC_TYPE_HEVC:
                 ret = push_input_hevc(hComp);
                 break;
@@ -7905,7 +7949,7 @@ OMX_ERRORTYPE omx_vdec::push_input_h264 (OMX_HANDLETYPE hComp)
     return OMX_ErrorNone;
 }
 
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
 OMX_ERRORTYPE omx_vdec::push_input_hevc (OMX_HANDLETYPE hComp)
 {
     OMX_U32 partial_frame = 1;
@@ -8125,7 +8169,7 @@ OMX_ERRORTYPE omx_vdec::push_input_hevc (OMX_HANDLETYPE hComp)
     }
     return OMX_ErrorNone;
 }
-#endif  // OMX_VDEC_HEVC_Q6
+#endif  // OMX_VDEC_HEVC
 
 OMX_ERRORTYPE omx_vdec::push_input_vc1 (OMX_HANDLETYPE hComp)
 {
@@ -8233,7 +8277,7 @@ int omx_vdec::alloc_map_ion_memory(OMX_U32 buffer_size,
         alloc_data->flags |= ION_SECURE;
 
     alloc_data->heap_mask = ION_HEAP(ION_IOMMU_HEAP_ID);
-#ifdef OMX_VDEC_HEVC_Q6
+#ifdef OMX_VDEC_HEVC
     if (m_hevc_q6)
         alloc_data->heap_mask = ION_HEAP(ION_ADSP_HEAP_ID);
 #endif

@@ -60,10 +60,12 @@ libOmxVdec-def += -DMAX_RES_1080P
 libOmxVdec-def += -DMAX_RES_1080P_EBI
 libOmxVdec-def += -DPROCESS_EXTRADATA_IN_OUTPUT_PORT
 libOmxVdec-def += -D_MSM8974_
-libOmxVdec-def += -D_HEVC_USE_ADSP_HEAP_
-# The aDSP-hosted q6 HFI core decodes HEVC; omx_vdec serves the
-# OMX.qcom.video.decoder.hevc kind on it.
-libOmxVdec-def += -DOMX_VDEC_HEVC_Q6
+# HEVC kinds: omx_vdec serves OMX.qcom.video.decoder.hevc on the Venus core
+# and OMX.qcom.video.decoder.hevc.q6 on the aDSP-hosted q6 core, chosen by
+# component name at run time (ION heap and device node follow the name).
+libOmxVdec-def += -DOMX_VDEC_HEVC
+# The AVI and FLV extractors deliver whole DivX and Spark frames.
+libOmxVdec-def += -DOMX_VDEC_DIVX_FRAME_MODE
 # The legacy ASF extractor delivers whole VC-1 frames; AOSP ACodec never sets
 # OMX_QcomIndexPortDefn, so the vc1 and wmv kinds default to frame mode.
 libOmxVdec-def += -DOMX_VDEC_VC1_FRAME_MODE
