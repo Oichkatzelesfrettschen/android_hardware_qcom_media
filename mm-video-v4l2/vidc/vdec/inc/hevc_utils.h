@@ -135,6 +135,8 @@ class HEVC_Utils
         bool isNewFrame(OMX_BUFFERHEADERTYPE *p_buf_hdr,
                 OMX_IN OMX_U32 size_of_nal_length_field,
                 OMX_OUT OMX_BOOL &isNewFrame);
+        /* nal_unit_type of the NAL the last isNewFrame() call examined. */
+        uint32 get_nalu_type() const { return nalu_type; }
 
     private:
 
