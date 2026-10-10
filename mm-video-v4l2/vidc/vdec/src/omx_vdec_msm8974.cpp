@@ -680,6 +680,9 @@ omx_vdec::omx_vdec(): m_error_propogated(false),
     m_smoothstreaming_width = 0;
     m_smoothstreaming_height = 0;
     is_q6_platform = false;
+#ifdef OMX_VDEC_HEVC_Q6
+    m_hevc_q6 = false;
+#endif
 }
 
 static const int event_type[] = {
@@ -1567,6 +1570,17 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
     }
 #endif
 
+#ifdef OMX_VDEC_HEVC_Q6
+    /* HEVC decodes on the aDSP-hosted q6 HFI core, which msm_vidc registers
+     * as the decoder node after the venus pair (nr = BASE_DEVICE_NUMBER +
+     * MSM_VIDC_MAX_DEVICES for hfi_type "q6"). */
+    if (!strncmp(role, "OMX.qcom.video.decoder.hevc", OMX_MAX_STRINGNAME_SIZE)) {
+        device_name = (OMX_STRING)"/dev/video34";
+        is_q6_platform = true;
+        m_hevc_q6 = true;
+    }
+#endif
+
     if (!strncmp(role, "OMX.qcom.video.decoder.avc.secure",OMX_MAX_STRINGNAME_SIZE)) {
         struct v4l2_control control;
         secure_mode = true;
@@ -1686,6 +1700,19 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         codec_type_parse = CODEC_TYPE_H264;
         m_frame_parser.init_start_codes (codec_type_parse);
         m_frame_parser.init_nal_length(nal_length);
+#ifdef OMX_VDEC_HEVC_Q6
+    } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.hevc",\
+                OMX_MAX_STRINGNAME_SIZE)) {
+        /* ACodec's video coding map keys HEVC to OMX_VIDEO_CodingHEVC, so the
+         * input port format enumeration must report that value. */
+        strlcpy((char *)m_cRole, "video_decoder.hevc",OMX_MAX_STRINGNAME_SIZE);
+        drv_ctx.decoder_format = VDEC_CODECTYPE_HEVC;
+        output_capability = V4L2_PIX_FMT_HEVC;
+        eCompressionFormat = OMX_VIDEO_CodingHEVC;
+        codec_type_parse = CODEC_TYPE_HEVC;
+        m_frame_parser.init_start_codes (codec_type_parse);
+        m_frame_parser.init_nal_length(nal_length);
+#endif
     } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.vc1",\
                 OMX_MAX_STRINGNAME_SIZE)) {
         strlcpy((char *)m_cRole, "video_decoder.vc1",OMX_MAX_STRINGNAME_SIZE);
@@ -1694,6 +1721,12 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         codec_type_parse = CODEC_TYPE_VC1;
         output_capability = V4L2_PIX_FMT_VC1_ANNEX_G;
         m_frame_parser.init_start_codes (codec_type_parse);
+#ifdef OMX_VDEC_VC1_FRAME_MODE
+        /* Frame mode: push_input_vc1 rejects STRUCT_C (simple and main
+         * profile) streams and only coalesces advanced-profile start codes,
+         * while the client delivers one VC-1 frame per buffer. */
+        arbitrary_bytes = false;
+#endif
     } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.wmv",\
                 OMX_MAX_STRINGNAME_SIZE)) {
         strlcpy((char *)m_cRole, "video_decoder.vc1",OMX_MAX_STRINGNAME_SIZE);
@@ -1702,6 +1735,9 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
         codec_type_parse = CODEC_TYPE_VC1;
         output_capability = V4L2_PIX_FMT_VC1_ANNEX_L;
         m_frame_parser.init_start_codes (codec_type_parse);
+#ifdef OMX_VDEC_VC1_FRAME_MODE
+        arbitrary_bytes = false;
+#endif
     } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.vp8",    \
                 OMX_MAX_STRINGNAME_SIZE)) {
         strlcpy((char *)m_cRole, "video_decoder.vp8",OMX_MAX_STRINGNAME_SIZE);
@@ -1898,6 +1934,22 @@ OMX_ERRORTYPE omx_vdec::component_init(OMX_STRING role)
                 eRet = OMX_ErrorInsufficientResources;
             }
         }
+#ifdef OMX_VDEC_HEVC_Q6
+        if (drv_ctx.decoder_format == VDEC_CODECTYPE_HEVC) {
+            /* push_input_hevc coalesces NALs into access units through the
+             * same scratch buffer the H.264 path uses. */
+            h264_scratch.nAllocLen = drv_ctx.ip_buf.buffer_size;
+            h264_scratch.pBuffer = (OMX_U8 *)malloc (drv_ctx.ip_buf.buffer_size);
+            h264_scratch.nFilledLen = 0;
+            h264_scratch.nOffset = 0;
+
+            if (h264_scratch.pBuffer == NULL) {
+                DEBUG_PRINT_ERROR("h264_scratch.pBuffer Allocation failed ");
+                return OMX_ErrorInsufficientResources;
+            }
+            m_hevc_utils.initialize_frame_checking_environment();
+        }
+#endif
 
         if (pipe(fds)) {
             DEBUG_PRINT_ERROR("pipe creation failed");
@@ -2619,6 +2671,10 @@ bool omx_vdec::execute_input_flush()
         if (m_frame_parser.mutils) {
             m_frame_parser.mutils->initialize_frame_checking_environment();
         }
+#ifdef OMX_VDEC_HEVC_Q6
+        if (m_hevc_q6)
+            m_hevc_utils.initialize_frame_checking_environment();
+#endif
 
         while (m_input_pending_q.m_size) {
             m_input_pending_q.pop_entry(&p1,&p2,&ident);
@@ -2746,6 +2802,18 @@ OMX_ERRORTYPE omx_vdec::get_supported_profile_level(OMX_VIDEO_PARAM_PROFILELEVEL
             }
         } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.vp8",OMX_MAX_STRINGNAME_SIZE)) {
             eRet = OMX_ErrorNoMore;
+#ifdef OMX_VDEC_HEVC_Q6
+        } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.hevc",OMX_MAX_STRINGNAME_SIZE)) {
+            /* The q6 core decodes at most 1280x720 at 30 fps (qcom,max-hw-load
+             * 108000), the capacity of HEVC Main profile level 3.1. */
+            if (profileLevelType->nProfileIndex == 0) {
+                profileLevelType->eProfile = VDEC_HEVC_PROFILE_MAIN;
+                profileLevelType->eLevel   = VDEC_HEVC_LEVEL_MAIN_TIER_31;
+            } else {
+                DEBUG_PRINT_LOW("get_parameter: OMX_IndexParamVideoProfileLevelQuerySupported nProfileIndex ret NoMore %lu", profileLevelType->nProfileIndex);
+                eRet = OMX_ErrorNoMore;
+            }
+#endif
         } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.mpeg2",OMX_MAX_STRINGNAME_SIZE)) {
             if (profileLevelType->nProfileIndex == 0) {
                 profileLevelType->eProfile = OMX_VIDEO_MPEG2ProfileSimple;
@@ -2981,6 +3049,14 @@ OMX_ERRORTYPE  omx_vdec::get_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                                                 nativeBuffersUsage->nUsage = (GRALLOC_USAGE_PRIVATE_MM_HEAP | GRALLOC_USAGE_PROTECTED |
                                                         GRALLOC_USAGE_PRIVATE_UNCACHED);
                                             } else {
+#ifdef OMX_VDEC_HEVC_Q6
+                                                /* The q6 core reaches only the ADSP ION heap. */
+                                                if (m_hevc_q6) {
+                                                    nativeBuffersUsage->nUsage =
+                                                        (GRALLOC_USAGE_PRIVATE_ADSP_HEAP |
+                                                         GRALLOC_USAGE_PRIVATE_UNCACHED);
+                                                } else
+#endif
                                                 nativeBuffersUsage->nUsage =
                                                     (GRALLOC_USAGE_PRIVATE_IOMMU_HEAP |
                                                      GRALLOC_USAGE_PRIVATE_UNCACHED);
@@ -3443,6 +3519,15 @@ OMX_ERRORTYPE  omx_vdec::set_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                                           DEBUG_PRINT_ERROR("Setparameter: unknown Index %s", comp_role->cRole);
                                           eRet =OMX_ErrorUnsupportedSetting;
                                       }
+#ifdef OMX_VDEC_HEVC_Q6
+                                  } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.hevc",OMX_MAX_STRINGNAME_SIZE)) {
+                                      if (!strncmp((const char*)comp_role->cRole,"video_decoder.hevc",OMX_MAX_STRINGNAME_SIZE)) {
+                                          strlcpy((char*)m_cRole,"video_decoder.hevc",OMX_MAX_STRINGNAME_SIZE);
+                                      } else {
+                                          DEBUG_PRINT_ERROR("Setparameter: unknown Index %s", comp_role->cRole);
+                                          eRet =OMX_ErrorUnsupportedSetting;
+                                      }
+#endif
                                   } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.mpeg4",OMX_MAX_STRINGNAME_SIZE)) {
                                       if (!strncmp((const char*)comp_role->cRole,"video_decoder.mpeg4",OMX_MAX_STRINGNAME_SIZE)) {
                                           strlcpy((char*)m_cRole,"video_decoder.mpeg4",OMX_MAX_STRINGNAME_SIZE);
@@ -3856,6 +3941,15 @@ OMX_ERRORTYPE  omx_vdec::set_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                              pParams->nMaxFrameWidth,  pParams->nMaxFrameHeight,
                              maxSmoothStreamingWidth, maxSmoothStreamingHeight);
                     eRet = OMX_ErrorBadParameter;
+#ifdef OMX_VDEC_HEVC_Q6
+                } else if (m_hevc_q6 && (pParams->nMaxFrameWidth > 1280
+                            || pParams->nMaxFrameHeight > 720)) {
+                    /* The q6 core decodes at most 1280x720. */
+                    DEBUG_PRINT_ERROR(
+                            "Adaptive playback request exceeds the q6 core limit : [%lu x %lu] vs [1280 x 720]",
+                             pParams->nMaxFrameWidth,  pParams->nMaxFrameHeight);
+                    eRet = OMX_ErrorBadParameter;
+#endif
                 } else {
                     eRet = enable_adaptive_playback(pParams->nMaxFrameWidth, pParams->nMaxFrameHeight);
                 }
@@ -5961,6 +6055,10 @@ if (buffer->nFlags & QOMX_VIDEO_BUFFERFLAG_EOSEQ) {
         frame_count = 0;
         if (m_frame_parser.mutils)
             m_frame_parser.mutils->initialize_frame_checking_environment();
+#ifdef OMX_VDEC_HEVC_Q6
+        if (m_hevc_q6)
+            m_hevc_utils.initialize_frame_checking_environment();
+#endif
         m_frame_parser.flush();
         h264_last_au_ts = LLONG_MAX;
         h264_last_au_flags = 0;
@@ -6544,6 +6642,16 @@ OMX_ERRORTYPE  omx_vdec::component_role_enum(OMX_IN OMX_HANDLETYPE hComp,
             DEBUG_PRINT_LOW("No more roles");
             eRet = OMX_ErrorNoMore;
         }
+#ifdef OMX_VDEC_HEVC_Q6
+    } else if (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.hevc",OMX_MAX_STRINGNAME_SIZE)) {
+        if ((0 == index) && role) {
+            strlcpy((char *)role, "video_decoder.hevc",OMX_MAX_STRINGNAME_SIZE);
+            DEBUG_PRINT_LOW("component_role_enum: role %s",role);
+        } else {
+            DEBUG_PRINT_LOW("No more roles");
+            eRet = OMX_ErrorNoMore;
+        }
+#endif
     } else if ( (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.vc1",OMX_MAX_STRINGNAME_SIZE)) ||
             (!strncmp(drv_ctx.kind, "OMX.qcom.video.decoder.wmv",OMX_MAX_STRINGNAME_SIZE))
           ) {
@@ -7423,6 +7531,11 @@ OMX_ERRORTYPE omx_vdec::push_input_buffer (OMX_HANDLETYPE hComp)
             case CODEC_TYPE_H264:
                 ret = push_input_h264(hComp);
                 break;
+#ifdef OMX_VDEC_HEVC_Q6
+            case CODEC_TYPE_HEVC:
+                ret = push_input_hevc(hComp);
+                break;
+#endif
             case CODEC_TYPE_VC1:
                 ret = push_input_vc1(hComp);
                 break;
@@ -7792,6 +7905,228 @@ OMX_ERRORTYPE omx_vdec::push_input_h264 (OMX_HANDLETYPE hComp)
     return OMX_ErrorNone;
 }
 
+#ifdef OMX_VDEC_HEVC_Q6
+OMX_ERRORTYPE omx_vdec::push_input_hevc (OMX_HANDLETYPE hComp)
+{
+    OMX_U32 partial_frame = 1;
+    unsigned address = 0, p2 = 0, id = 0;
+    OMX_BOOL isNewFrame = OMX_FALSE;
+    OMX_BOOL generate_ebd = OMX_TRUE;
+
+    if (h264_scratch.pBuffer == NULL) {
+        DEBUG_PRINT_ERROR("ERROR:HEVC Scratch Buffer not allocated");
+        return OMX_ErrorBadParameter;
+    }
+    DEBUG_PRINT_LOW("Pending h264_scratch.nFilledLen %lu "
+            "look_ahead_nal %d", h264_scratch.nFilledLen, look_ahead_nal);
+    DEBUG_PRINT_LOW("Pending pdest_frame->nFilledLen %lu",pdest_frame->nFilledLen);
+    if (h264_scratch.nFilledLen && look_ahead_nal) {
+        look_ahead_nal = false;
+        if ((pdest_frame->nAllocLen - pdest_frame->nFilledLen) >=
+                h264_scratch.nFilledLen) {
+            memcpy ((pdest_frame->pBuffer + pdest_frame->nFilledLen),
+                    h264_scratch.pBuffer,h264_scratch.nFilledLen);
+            pdest_frame->nFilledLen += h264_scratch.nFilledLen;
+            DEBUG_PRINT_LOW("Copy the previous NAL (h264 scratch) into Dest frame");
+            h264_scratch.nFilledLen = 0;
+        } else {
+            DEBUG_PRINT_ERROR("Error:1: Destination buffer overflow for HEVC");
+            return OMX_ErrorBadParameter;
+        }
+    }
+
+    /* If an empty input is queued with EOS, do not coalesce with the destination-frame yet, as this may result
+       in EOS flag getting associated with the destination
+    */
+    if (!psource_frame->nFilledLen && (psource_frame->nFlags & OMX_BUFFERFLAG_EOS) &&
+            pdest_frame->nFilledLen) {
+        DEBUG_PRINT_HIGH("delay ETB for 'empty buffer with EOS'");
+        generate_ebd = OMX_FALSE;
+    }
+
+    if (nal_length == 0) {
+        DEBUG_PRINT_LOW("Zero NAL, hence parse using start code");
+        if (m_frame_parser.parse_sc_frame(psource_frame,
+                    &h264_scratch,&partial_frame) == -1) {
+            DEBUG_PRINT_ERROR("Error In Parsing Return Error");
+            return OMX_ErrorBadParameter;
+        }
+    } else {
+        DEBUG_PRINT_LOW("Non-zero NAL length clip, hence parse with NAL size %d ",nal_length);
+        if (m_frame_parser.parse_h264_nallength(psource_frame,
+                    &h264_scratch,&partial_frame) == -1) {
+            DEBUG_PRINT_ERROR("Error In Parsing NAL size, Return Error");
+            return OMX_ErrorBadParameter;
+        }
+    }
+
+    if (partial_frame == 0) {
+        if (nal_count == 0 && h264_scratch.nFilledLen == 0) {
+            DEBUG_PRINT_LOW("First NAL with Zero Length, hence Skip");
+            nal_count++;
+            h264_scratch.nTimeStamp = psource_frame->nTimeStamp;
+            h264_scratch.nFlags = psource_frame->nFlags;
+        } else {
+            DEBUG_PRINT_LOW("Parsed New NAL Length = %lu",h264_scratch.nFilledLen);
+            if (h264_scratch.nFilledLen) {
+                m_hevc_utils.isNewFrame(&h264_scratch, 0, isNewFrame);
+                nal_count++;
+                if (VALID_TS(h264_last_au_ts) && !VALID_TS(pdest_frame->nTimeStamp)) {
+                    pdest_frame->nTimeStamp = h264_last_au_ts;
+                    pdest_frame->nFlags = h264_last_au_flags;
+                }
+                if (m_hevc_utils.get_nalu_type() <= HEVC_Utils::NAL_UNIT_CODED_SLICE_CRA) {
+                    h264_last_au_ts = h264_scratch.nTimeStamp;
+                    h264_last_au_flags = h264_scratch.nFlags;
+                } else
+                    h264_last_au_ts = LLONG_MAX;
+            }
+
+            if (!isNewFrame) {
+                if ( (pdest_frame->nAllocLen - pdest_frame->nFilledLen) >=
+                        h264_scratch.nFilledLen) {
+                    DEBUG_PRINT_LOW("Not a NewFrame Copy into Dest len %lu",
+                            h264_scratch.nFilledLen);
+                    memcpy ((pdest_frame->pBuffer + pdest_frame->nFilledLen),
+                            h264_scratch.pBuffer,h264_scratch.nFilledLen);
+                    pdest_frame->nFilledLen += h264_scratch.nFilledLen;
+                    if (m_hevc_utils.get_nalu_type() == HEVC_Utils::NAL_UNIT_EOS)
+                        pdest_frame->nFlags |= QOMX_VIDEO_BUFFERFLAG_EOSEQ;
+                    h264_scratch.nFilledLen = 0;
+                } else {
+                    DEBUG_PRINT_LOW("Error:2: Destination buffer overflow for HEVC");
+                    return OMX_ErrorBadParameter;
+                }
+            } else if(h264_scratch.nFilledLen) {
+                look_ahead_nal = true;
+                DEBUG_PRINT_LOW("Frame Found start Decoding Size =%lu TimeStamp = %llu",
+                        pdest_frame->nFilledLen,pdest_frame->nTimeStamp);
+                DEBUG_PRINT_LOW("Found a frame size = %lu number = %d",
+                        pdest_frame->nFilledLen,frame_count++);
+
+                if (pdest_frame->nFilledLen == 0) {
+                    DEBUG_PRINT_LOW("Copy the Current Frame since and push it");
+                    look_ahead_nal = false;
+                    if ( (pdest_frame->nAllocLen - pdest_frame->nFilledLen) >=
+                            h264_scratch.nFilledLen) {
+                        memcpy ((pdest_frame->pBuffer + pdest_frame->nFilledLen),
+                                h264_scratch.pBuffer,h264_scratch.nFilledLen);
+                        pdest_frame->nFilledLen += h264_scratch.nFilledLen;
+                        h264_scratch.nFilledLen = 0;
+                    } else {
+                        DEBUG_PRINT_ERROR("Error:3: Destination buffer overflow for HEVC");
+                        return OMX_ErrorBadParameter;
+                    }
+                } else {
+                    if (psource_frame->nFilledLen || h264_scratch.nFilledLen) {
+                        DEBUG_PRINT_LOW("Reset the EOS Flag");
+                        pdest_frame->nFlags &= ~OMX_BUFFERFLAG_EOS;
+                    }
+                    /*Push the frame to the Decoder*/
+                    if (empty_this_buffer_proxy(hComp,pdest_frame) != OMX_ErrorNone) {
+                        return OMX_ErrorBadParameter;
+                    }
+                    //frame_count++;
+                    pdest_frame = NULL;
+                    if (m_input_free_q.m_size) {
+                        m_input_free_q.pop_entry(&address,&p2,&id);
+                        pdest_frame = (OMX_BUFFERHEADERTYPE *) address;
+                        DEBUG_PRINT_LOW("Pop the next pdest_buffer %p",pdest_frame);
+                        pdest_frame->nFilledLen = 0;
+                        pdest_frame->nFlags = 0;
+                        pdest_frame->nTimeStamp = LLONG_MAX;
+                    }
+                }
+            }
+        }
+    } else {
+        DEBUG_PRINT_LOW("Not a Complete Frame, pdest_frame->nFilledLen %lu",pdest_frame->nFilledLen);
+        /*Check if Destination Buffer is full*/
+        if (h264_scratch.nAllocLen ==
+                h264_scratch.nFilledLen + h264_scratch.nOffset) {
+            DEBUG_PRINT_ERROR("ERROR: Frame Not found though Destination Filled");
+            return OMX_ErrorStreamCorrupt;
+        }
+    }
+
+    if (!psource_frame->nFilledLen) {
+        DEBUG_PRINT_LOW("Buffer Consumed return source %p back to client",psource_frame);
+
+        if (psource_frame->nFlags & OMX_BUFFERFLAG_EOS) {
+            if (pdest_frame) {
+                DEBUG_PRINT_LOW("EOS Reached Pass Last Buffer");
+                if ( (pdest_frame->nAllocLen - pdest_frame->nFilledLen) >=
+                        h264_scratch.nFilledLen) {
+                    if(pdest_frame->nFilledLen == 0) {
+                        /* No residual frame from before, send whatever
+                         * we have left */
+                        memcpy((pdest_frame->pBuffer + pdest_frame->nFilledLen),
+                                h264_scratch.pBuffer, h264_scratch.nFilledLen);
+                        pdest_frame->nFilledLen += h264_scratch.nFilledLen;
+                        h264_scratch.nFilledLen = 0;
+                        pdest_frame->nTimeStamp = h264_scratch.nTimeStamp;
+                    } else {
+                        m_hevc_utils.isNewFrame(&h264_scratch, 0, isNewFrame);
+                        if(!isNewFrame) {
+                            /* Have a residual frame, but we know that the
+                             * AU in this frame is belonging to whatever
+                             * frame we had left over.  So append it */
+                             memcpy ((pdest_frame->pBuffer + pdest_frame->nFilledLen),
+                                     h264_scratch.pBuffer,h264_scratch.nFilledLen);
+                             pdest_frame->nFilledLen += h264_scratch.nFilledLen;
+                             h264_scratch.nFilledLen = 0;
+                             if (h264_last_au_ts != LLONG_MAX)
+                                 pdest_frame->nTimeStamp = h264_last_au_ts;
+                        } else {
+                            /* Completely new frame, let's just push what
+                             * we have now.  The resulting EBD would trigger
+                             * another push */
+                            generate_ebd = OMX_FALSE;
+                            pdest_frame->nTimeStamp = h264_last_au_ts;
+                            h264_last_au_ts = h264_scratch.nTimeStamp;
+                        }
+                    }
+                } else {
+                    DEBUG_PRINT_ERROR("ERROR:4: Destination buffer overflow for HEVC");
+                    return OMX_ErrorBadParameter;
+                }
+
+                /* Iff we coalesced two buffers, inherit the flags of both bufs */
+                if(generate_ebd == OMX_TRUE) {
+                     pdest_frame->nFlags = h264_scratch.nFlags | psource_frame->nFlags;
+                }
+
+                DEBUG_PRINT_LOW("pdest_frame->nFilledLen =%lu TimeStamp = %llu",
+                        pdest_frame->nFilledLen,pdest_frame->nTimeStamp);
+                DEBUG_PRINT_LOW("Push AU frame number %d to driver", frame_count++);
+                /*Push the frame to the Decoder*/
+                if (empty_this_buffer_proxy(hComp,pdest_frame) != OMX_ErrorNone) {
+                    return OMX_ErrorBadParameter;
+                }
+                frame_count++;
+                pdest_frame = NULL;
+            } else {
+                DEBUG_PRINT_LOW("Last frame in else dest addr %p size %lu",
+                        pdest_frame,h264_scratch.nFilledLen);
+                generate_ebd = OMX_FALSE;
+            }
+        }
+    }
+    if (generate_ebd && !psource_frame->nFilledLen) {
+        m_cb.EmptyBufferDone (hComp,m_app_data,psource_frame);
+        psource_frame = NULL;
+        if (m_input_pending_q.m_size) {
+            DEBUG_PRINT_LOW("Pull Next source Buffer %p",psource_frame);
+            m_input_pending_q.pop_entry(&address,&p2,&id);
+            psource_frame = (OMX_BUFFERHEADERTYPE *) address;
+            DEBUG_PRINT_LOW("Next source Buffer flag %lu src length %lu",
+                    psource_frame->nFlags,psource_frame->nFilledLen);
+        }
+    }
+    return OMX_ErrorNone;
+}
+#endif  // OMX_VDEC_HEVC_Q6
+
 OMX_ERRORTYPE omx_vdec::push_input_vc1 (OMX_HANDLETYPE hComp)
 {
     OMX_U8 *buf, *pdest;
@@ -7898,6 +8233,10 @@ int omx_vdec::alloc_map_ion_memory(OMX_U32 buffer_size,
         alloc_data->flags |= ION_SECURE;
 
     alloc_data->heap_mask = ION_HEAP(ION_IOMMU_HEAP_ID);
+#ifdef OMX_VDEC_HEVC_Q6
+    if (m_hevc_q6)
+        alloc_data->heap_mask = ION_HEAP(ION_ADSP_HEAP_ID);
+#endif
     if (secure_mode && (alloc_data->flags & ION_SECURE))
         alloc_data->heap_mask = ION_HEAP(MEM_HEAP_ID);
     rc = ioctl(fd,ION_IOC_ALLOC,alloc_data);
