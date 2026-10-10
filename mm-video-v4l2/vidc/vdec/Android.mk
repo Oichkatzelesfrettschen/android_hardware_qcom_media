@@ -61,6 +61,9 @@ libOmxVdec-def += -DMAX_RES_1080P_EBI
 libOmxVdec-def += -DPROCESS_EXTRADATA_IN_OUTPUT_PORT
 libOmxVdec-def += -D_MSM8974_
 libOmxVdec-def += -D_HEVC_USE_ADSP_HEAP_
+# The aDSP-hosted q6 HFI core decodes HEVC; omx_vdec serves the
+# OMX.qcom.video.decoder.hevc kind on it.
+libOmxVdec-def += -DOMX_VDEC_HEVC_Q6
 endif
 ifeq ($(TARGET_BOARD_PLATFORM),apq8084)
 libOmxVdec-def += -DMAX_RES_1080P
@@ -144,6 +147,9 @@ LOCAL_SRC_FILES         := src/frameparser.cpp
 LOCAL_SRC_FILES         += src/h264_utils.cpp
 LOCAL_SRC_FILES         += src/ts_parser.cpp
 LOCAL_SRC_FILES         += src/mp4_utils.cpp
+ifeq ($(TARGET_BOARD_PLATFORM),msm8226)
+LOCAL_SRC_FILES         += src/hevc_utils.cpp
+endif
 ifeq ($(call is-board-platform-in-list,msm8974 msm8610 msm8226 apq8084 mpq8092),true)
 LOCAL_SRC_FILES         += src/omx_vdec_msm8974.cpp
 endif

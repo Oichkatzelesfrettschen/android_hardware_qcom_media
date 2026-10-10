@@ -99,6 +99,13 @@ extern "C" {
 #ifdef MAX_RES_1080P
 #include "mp4_utils.h"
 #endif
+#ifdef OMX_VDEC_HEVC_Q6
+#include "hevc_utils.h"
+/* OMX_VIDEO_HEVCProfileMain and OMX_VIDEO_HEVCMainTierLevel31 of the
+ * framework's OMX_VideoExt.h, which mm-core/inc/OMX_VideoExt.h lacks. */
+#define VDEC_HEVC_PROFILE_MAIN          0x1
+#define VDEC_HEVC_LEVEL_MAIN_TIER_31    0x100
+#endif
 #include <linux/android_pmem.h>
 #include "extra_data_handler.h"
 #include "ts_parser.h"
@@ -614,6 +621,9 @@ class omx_vdec: public qc_omx_component
         OMX_ERRORTYPE push_input_sc_codec (OMX_HANDLETYPE hComp);
         OMX_ERRORTYPE push_input_h264 (OMX_HANDLETYPE hComp);
         OMX_ERRORTYPE push_input_vc1 (OMX_HANDLETYPE hComp);
+#ifdef OMX_VDEC_HEVC_Q6
+        OMX_ERRORTYPE push_input_hevc (OMX_HANDLETYPE hComp);
+#endif
 
         OMX_ERRORTYPE fill_this_buffer_proxy(OMX_HANDLETYPE       hComp,
                 OMX_BUFFERHEADERTYPE *buffer);
@@ -928,6 +938,11 @@ class omx_vdec: public qc_omx_component
         } m_custom_buffersize;
         bool m_power_hinted;
         bool is_q6_platform;
+#ifdef OMX_VDEC_HEVC_Q6
+        /* The session runs on the aDSP-hosted q6 HFI core (HEVC decode). */
+        bool m_hevc_q6;
+        HEVC_Utils m_hevc_utils;
+#endif
         OMX_ERRORTYPE power_module_register();
         OMX_ERRORTYPE power_module_deregister();
         bool msg_thread_created;
