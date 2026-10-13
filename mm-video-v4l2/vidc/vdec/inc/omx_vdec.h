@@ -584,6 +584,7 @@ class omx_vdec: public qc_omx_component
                 OMX_BUFFERHEADERTYPE *pmem_bufferHdr);
         OMX_ERRORTYPE free_output_buffer(OMX_BUFFERHEADERTYPE *bufferHdr);
         void free_output_buffer_header();
+        bool shutdown_driver();
         void free_input_buffer_header();
 
         OMX_ERRORTYPE allocate_input_heap_buffer(OMX_HANDLETYPE       hComp,
@@ -599,6 +600,7 @@ class omx_vdec: public qc_omx_component
                 OMX_PTR              appData,
                 OMX_U32              bytes);
 
+        OMX_ERRORTYPE prepare_output_buffer(struct v4l2_buffer *buffer);
         OMX_ERRORTYPE allocate_output_buffer(OMX_HANDLETYPE       hComp,
                 OMX_BUFFERHEADERTYPE **bufferHdr,
                 OMX_U32 port,OMX_PTR appData,
@@ -698,9 +700,11 @@ class omx_vdec: public qc_omx_component
         bool align_pmem_buffers(int pmem_fd, OMX_U32 buffer_size,
                 OMX_U32 alignment);
 #ifdef USE_ION
+        enum ion_buffer_consumer { DECODER_BUFFER, C2D_DESTINATION };
         int alloc_map_ion_memory(OMX_U32 buffer_size,
                 OMX_U32 alignment, struct ion_allocation_data *alloc_data,
-                struct ion_fd_data *fd_data,int flag);
+                struct ion_fd_data *fd_data, int flag,
+                ion_buffer_consumer consumer = DECODER_BUFFER);
         void free_ion_memory(struct vdec_ion *buf_ion_info);
 #endif
 
@@ -819,6 +823,8 @@ class omx_vdec: public qc_omx_component
         int pending_output_buffers;
         // bitmask array size for output side
         uint64_t m_out_bm_count;
+        uint64_t m_out_bm_registered;
+        bool driver_shutdown_failed;
         // bitmask array size for input side
         uint64_t m_inp_bm_count;
         //Input port Populated
@@ -995,16 +1001,21 @@ class omx_vdec: public qc_omx_component
                         OMX_BUFFERHEADERTYPE **bufferHdr,OMX_U32 port,OMX_PTR appData,
                         OMX_U32 bytes);
                 OMX_ERRORTYPE free_output_buffer(OMX_BUFFERHEADERTYPE *bufferHdr);
+                OMX_ERRORTYPE finish_driver_release();
             private:
 #define MAX_COUNT 32
                 omx_vdec *omx;
                 bool enabled;
                 OMX_COLOR_FORMATTYPE ColorFormat;
                 void init_members();
+                OMX_ERRORTYPE rollback_driver_buffer(unsigned int index);
                 bool color_convert_mode;
                 ColorConvertFormat dest_format;
                 class omx_c2d_conv c2d;
                 unsigned int allocated_count;
+                bool buffer_requirements_released;
+                bool driver_release_pending;
+                unsigned int driver_release_index;
                 unsigned int buffer_size_req;
                 unsigned int buffer_alignment_req;
                 OMX_QCOM_PLATFORM_PRIVATE_LIST      m_platform_list_client[MAX_COUNT];
@@ -1016,6 +1027,7 @@ class omx_vdec: public qc_omx_component
 #endif
                 unsigned char *pmem_baseaddress[MAX_COUNT];
                 int pmem_fd[MAX_COUNT];
+                unsigned int mapped_size[MAX_COUNT];
                 struct vidc_heap {
                     sp<MemoryHeapBase>    video_heap_ptr;
                 };
